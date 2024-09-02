@@ -1,0 +1,1 @@
+# La aplicación estable usa únicamente la biblioteca estándar de Python.
