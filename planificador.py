@@ -1,9 +1,100 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+# ======== Helpers globales para la tabla de ciclos ========
+timeline_data = {}    # {pid: ['','X','O',...]}
+arrival_marks = {}    # {pid: col_index_a_sombrear}
+total_time = 0        # último ciclo
+all_pids = []         # orden de filas en la tabla de ciclos
+
+def init_timeline_from_process_table():
+    """Inicializa estructuras para la tabla de ciclos a partir de la tabla de procesos."""
+    global timeline_data, arrival_marks, total_time, all_pids
+    timeline_data = {}
+    arrival_marks = {}
+    total_time = 0
+    all_pids = []
+    for child in process_table.get_children():
+        pid = str(process_table.item(child)['values'][0])
+        arr = int(process_table.item(child)['values'][1])
+        all_pids.append(pid)
+        timeline_data[pid] = []           # se rellenará ciclo a ciclo
+        arrival_marks[pid] = arr + 1      # se sombreará esta columna (columna 1 == ciclo 1)
+
+def _ensure_len(pid, t):
+    """Asegura que la lista del proceso tenga longitud al menos t, rellenando con ''."""
+    while len(timeline_data[pid]) < t:
+        timeline_data[pid].append('')
+
+def log_cycle(t, running_pid, queue_pids):
+    """Marca, para el ciclo t (1..), quién corre (X) y quién espera (O)."""
+    global total_time
+    for pid in all_pids:
+        _ensure_len(pid, t)
+        if pid == running_pid:
+            timeline_data[pid][t-1] = 'X'
+        elif pid in queue_pids:
+            # Sólo marcamos O si aún no está marcada X en ese ciclo.
+            timeline_data[pid][t-1] = timeline_data[pid][t-1] or 'O'
+        # else: vacío
+    total_time = max(total_time, t)
+
+def render_cycle_table():
+    """Dibuja la rejilla de ciclos con sombreado en las llegadas."""
+    # Limpiar si ya existe
+    for w in cycle_container.winfo_children():
+        w.destroy()
+
+    if total_time == 0 or not all_pids:
+        return
+
+    # Scroll horizontal
+    canvas = tk.Canvas(cycle_container, height=260)
+    hscroll = tk.Scrollbar(cycle_container, orient='horizontal', command=canvas.xview)
+    canvas.configure(xscrollcommand=hscroll.set)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    hscroll.grid(row=1, column=0, sticky="ew")
+    cycle_container.grid_rowconfigure(0, weight=1)
+    cycle_container.grid_columnconfigure(0, weight=1)
+
+    grid_frame = tk.Frame(canvas)
+    canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+
+    # Estilos visuales
+    cell_w = 28
+    cell_h = 22
+    bd = 1
+
+    # Cabecera
+    tk.Label(grid_frame, text="FCFS/SJF/SRTF/RR", width=14, anchor="w").grid(row=0, column=0, sticky="nsew")
+    for c in range(1, total_time+1):
+        tk.Label(grid_frame, text=str(c), width=int(cell_w/8), relief="raised")\
+          .grid(row=0, column=c, sticky="nsew")
+
+    # Filas por proceso
+    for r, pid in enumerate(all_pids, start=1):
+        tk.Label(grid_frame, text=pid, width=14, anchor="w", relief="groove")\
+          .grid(row=r, column=0, sticky="nsew")
+        row_vals = timeline_data.get(pid, [])
+        for c in range(1, total_time+1):
+            txt = row_vals[c-1] if c-1 < len(row_vals) else ''
+            bg = "SystemButtonFace"
+            # sombreado de llegada
+            if arrival_marks.get(pid, -1) == c:
+                bg = "#d9d9d9"
+            tk.Label(grid_frame, text=txt, width=int(cell_w/8), height=1,
+                     relief="groove", bd=bd, bg=bg)\
+              .grid(row=r, column=c, sticky="nsew")
+
+    # Ajuste del scrollregion
+    grid_frame.update_idletasks()
+    canvas.configure(scrollregion=canvas.bbox("all"))
+
+# ======== Algoritmos ========
+
 # Algoritmo First-Come, First-Served (FCFS)
 def first_come_first_served():
-    time = -1
+    time = 0
     queue = []
     completed_list = []
 
@@ -14,15 +105,31 @@ def first_come_first_served():
                 queue.append(process)
                 process_list.remove(process)
 
+    init_timeline_from_process_table()
+    add_to_queue()
+    if not queue and not process_list:
+        display_results([])
+        return
+
+    # Si está vacío, ocioso hasta que llegue algo
+    while not queue and process_list:
+        time += 1
+        add_to_queue()
+        log_cycle(time, None, [p['processID'] for p in queue])
+
     while process_list or queue:
-        while not queue:
+        if not queue:
             time += 1
             add_to_queue()
+            log_cycle(time, None, [p['processID'] for p in queue])
+            continue
 
         process = queue.pop(0)
         for _ in range(process['durationTime']):
             time += 1
             add_to_queue()
+            # === Ciclos ===
+            log_cycle(time, process['processID'], [p['processID'] for p in queue])
 
         process['completedTime'] = time
         process['turnAroundTime'] = process['completedTime'] - process['arrivalTime']
@@ -30,10 +137,11 @@ def first_come_first_served():
         completed_list.append(process)
 
     display_results(completed_list)
+    render_cycle_table()
 
 # Algoritmo Shortest Job First (SJF)
 def shortest_job_first():
-    time = -1
+    time = 0
     queue = []
     completed_list = []
 
@@ -45,15 +153,25 @@ def shortest_job_first():
                 process_list.remove(process)
         queue.sort(key=lambda x: x['durationTime'])
 
+    init_timeline_from_process_table()
+    add_to_queue()
+    while not queue and process_list:
+        time += 1
+        add_to_queue()
+        log_cycle(time, None, [p['processID'] for p in queue])
+
     while process_list or queue:
-        while not queue:
+        if not queue:
             time += 1
             add_to_queue()
+            log_cycle(time, None, [p['processID'] for p in queue])
+            continue
 
         process = queue.pop(0)
         for _ in range(process['durationTime']):
             time += 1
             add_to_queue()
+            log_cycle(time, process['processID'], [p['processID'] for p in queue])
 
         process['completedTime'] = time
         process['turnAroundTime'] = process['completedTime'] - process['arrivalTime']
@@ -61,10 +179,11 @@ def shortest_job_first():
         completed_list.append(process)
 
     display_results(completed_list)
+    render_cycle_table()
 
 # Algoritmo Shortest Remaining Time First (SRTF)
 def shortest_remaining_time_first():
-    time = -1
+    time = 0
     queue = []
     completed_list = []
 
@@ -72,21 +191,32 @@ def shortest_remaining_time_first():
         nonlocal queue
         for process in process_list[:]:
             if time >= process['arrivalTime']:
-                process['remainingTime'] = process['durationTime']
+                if 'remainingTime' not in process:
+                    process['remainingTime'] = process['durationTime']
                 queue.append(process)
                 process_list.remove(process)
         queue.sort(key=lambda x: x['remainingTime'])
 
+    init_timeline_from_process_table()
+    add_to_queue()
+    while not queue and process_list:
+        time += 1
+        add_to_queue()
+        log_cycle(time, None, [p['processID'] for p in queue])
+
     while process_list or queue:
-        while not queue:
+        if not queue:
             time += 1
             add_to_queue()
+            log_cycle(time, None, [p['processID'] for p in queue])
+            continue
 
-        #queue.sort(key=lambda x: x['remainingTime'])
-        time += 1
-
+        # Elegimos el de menor restante y ejecutamos 1 ciclo
+        add_to_queue()
         process = queue.pop(0)
+        time += 1
         process['remainingTime'] -= 1
+        log_cycle(time, process['processID'], [p['processID'] for p in queue])
 
         if process['remainingTime'] == 0:
             process['completedTime'] = time
@@ -95,53 +225,67 @@ def shortest_remaining_time_first():
             completed_list.append(process)
         else:
             queue.append(process)
-        
-        add_to_queue()
+            queue.sort(key=lambda x: x['remainingTime'])
 
     display_results(completed_list)
+    render_cycle_table()
 
 # Algoritmo Round Robin
 def round_robin():
-    time = -1
+    time = 0
     queue = []
     completed_list = []
 
-    time_quantum = int(time_quantum_entry.get())
-    if not time_quantum:
+    tq_text = time_quantum_entry.get()
+    if not tq_text.strip():
         messagebox.showerror("Error", "Por favor, ingrese un valor para el Time Quantum")
         return
+    time_quantum = int(tq_text)
 
     def add_to_queue():
         nonlocal queue
         for process in process_list[:]:
             if time >= process['arrivalTime']:
-                process['remainingTime'] = process['durationTime']
+                if 'remainingTime' not in process:
+                    process['remainingTime'] = process['durationTime']
                 process['lastTimeQueued'] = time
                 queue.append(process)
                 process_list.remove(process)
-        queue.sort(key=lambda x: [x['lastTimeQueued'],x['remainingTime'],x['arrivalTime']])
+        queue.sort(key=lambda x: [x['lastTimeQueued'], x['remainingTime'], x['arrivalTime']])
+
+    init_timeline_from_process_table()
+    add_to_queue()
+    while not queue and process_list:
+        time += 1
+        add_to_queue()
+        log_cycle(time, None, [p['processID'] for p in queue])
 
     while process_list or queue:
-        while not queue:
+        if not queue:
             time += 1
             add_to_queue()
+            log_cycle(time, None, [p['processID'] for p in queue])
+            continue
 
         process = queue.pop(0)
         for _ in range(min(time_quantum, process['remainingTime'])):
             time += 1
             add_to_queue()
             process['remainingTime'] -= 1
+            # === Ciclos ===
+            log_cycle(time, process['processID'], [p['processID'] for p in queue])
             if process['remainingTime'] == 0:
                 process['completedTime'] = time
                 process['turnAroundTime'] = process['completedTime'] - process['arrivalTime']
                 process['waitingTime'] = process['turnAroundTime'] - process['durationTime']
                 completed_list.append(process)
-                #break
-        if process['remainingTime'] > 0:
+                break
+        if process.get('remainingTime', 0) > 0:
             process['lastTimeQueued'] = time
             queue.append(process)
 
     display_results(completed_list)
+    render_cycle_table()
 
 #########################################################################################
 
@@ -161,7 +305,6 @@ def add_process():
         duration_time = int(duration_time_entry.get())
 
         if (process_id != '') and (arrival_time>=0) and (duration_time>0):
-            #process_list.append({'processID': process_id, 'arrivalTime': arrival_time, 'durationTime': duration_time})
             process_table.insert("", "end", values=(process_id, arrival_time, duration_time))
             process_id_entry.delete(0, 'end')
             arrival_time_entry.delete(0, 'end')
@@ -173,14 +316,10 @@ def add_process():
 
 # Calcular resultados según algoritmo seleccionado
 def calculate():
-    '''
-    if not process_list:
-        messagebox.showwarning("Advertencia", "Por favor, inserte algunos procesos")
-        return
-    '''
-
-    # Limpieza de la tabla de resultados
+    # Limpiar resultados
     result_table.delete(*result_table.get_children())
+    for w in cycle_container.winfo_children():
+        w.destroy()
 
     global process_list
     process_list = []
@@ -219,10 +358,12 @@ def display_results(completed_list):
                     process['turnAroundTime']
                 ))
 
-    avg_turnaround = sum(p['turnAroundTime'] for p in completed_list) / len(completed_list)
-    avg_waiting = sum(p['waitingTime'] for p in completed_list) / len(completed_list)
-    max_completed_time = max(p['completedTime'] for p in completed_list)
-    #throughput = len(completed_list) / max_completed_time
+    if not completed_list:
+        avg_turnaround = 0.0
+        avg_waiting = 0.0
+    else:
+        avg_turnaround = sum(p['turnAroundTime'] for p in completed_list) / len(completed_list)
+        avg_waiting = sum(p['waitingTime'] for p in completed_list) / len(completed_list)
 
     avg_turnaround_entry.config(state='normal')
     avg_turnaround_entry.delete(0, 'end')
@@ -233,12 +374,6 @@ def display_results(completed_list):
     avg_waiting_entry.delete(0, 'end')
     avg_waiting_entry.insert(0, f"{avg_waiting:.2f}")
     avg_waiting_entry.config(state='readonly')
-    '''
-    throughput_entry.config(state='normal')
-    throughput_entry.delete(0, 'end')
-    throughput_entry.insert(0, f"{throughput:.2f}")
-    throughput_entry.config(state='readonly')
-    '''
 
 if __name__ == "__main__":
 
@@ -307,7 +442,6 @@ if __name__ == "__main__":
     result_table.grid(row=7, columnspan=2, pady=10)
 
     # Promedios
-
     avg_waiting_label = tk.Label(frame, text="Promedio Espera:")
     avg_waiting_label.grid(row=8, column=0, padx=5, pady=5)
     avg_waiting_entry = tk.Entry(frame, state='readonly')
@@ -318,44 +452,40 @@ if __name__ == "__main__":
     avg_turnaround_entry = tk.Entry(frame, state='readonly')
     avg_turnaround_entry.grid(row=9, column=1, padx=5, pady=5)
 
-    '''
-    throughput_label = tk.Label(frame, text="Throughput:")
-    throughput_label.grid(row=10, column=0, padx=5, pady=5)
-    throughput_entry = tk.Entry(frame, state='readonly')
-    throughput_entry.grid(row=10, column=1, padx=5, pady=5)
-    '''
+    # ======== Contenedor de la tabla de ciclos ========
+    cycle_title = tk.Label(frame, text="Tabla de ciclos (X: ejecuta, O: espera)")
+    cycle_title.grid(row=10, column=0, columnspan=2, pady=(10,2))
+    cycle_container = tk.Frame(frame, width=800, height=260, relief="groove", bd=2)
+    cycle_container.grid(row=11, column=0, columnspan=2, sticky="nsew", pady=(0,10))
 
     process_list = []
 
-    # Boton para limpiar los resultados, manteniendo los procesos añadidos
-    clear_button = tk.Button(frame, text="Limpiar resultados", command=lambda:
-                                [result_table.delete(*result_table.get_children()),
-                                process_list.clear(),
-                                avg_turnaround_entry.config(state='normal'),
-                                avg_turnaround_entry.delete(0, 'end'),
-                                avg_turnaround_entry.config(state='readonly'),
-                                avg_waiting_entry.config(state='normal'),
-                                avg_waiting_entry.delete(0, 'end'),
-                                avg_waiting_entry.config(state='readonly')])
+    # Botones limpiar/reset
+    def clear_results_only():
+        result_table.delete(*result_table.get_children())
+        for w in cycle_container.winfo_children():
+            w.destroy()
+        process_list.clear()
+        avg_turnaround_entry.config(state='normal')
+        avg_turnaround_entry.delete(0, 'end')
+        avg_turnaround_entry.config(state='readonly')
+        avg_waiting_entry.config(state='normal')
+        avg_waiting_entry.delete(0, 'end')
+        avg_waiting_entry.config(state='readonly')
 
-    # Botón para resetear todo
-    reset_button = tk.Button(frame, text="Resetear todo", command=lambda:
-                             [process_table.delete(*process_table.get_children()),
-                              result_table.delete(*result_table.get_children()),
-                              process_list.clear(),
-                              avg_turnaround_entry.config(state='normal'),
-                              avg_turnaround_entry.delete(0, 'end'),
-                              avg_turnaround_entry.config(state='readonly'),
-                              avg_waiting_entry.config(state='normal'),
-                              avg_waiting_entry.delete(0, 'end'),
-                              avg_waiting_entry.config(state='readonly'),
-                              #throughput_entry.delete(0, 'end'),
-                              process_id_entry.delete(0, 'end'),
-                              arrival_time_entry.delete(0, 'end'),
-                              duration_time_entry.delete(0, 'end'),
-                              time_quantum_entry.delete(0, 'end')])
+    clear_button = tk.Button(frame, text="Limpiar resultados", command=clear_results_only)
+
+    def reset_all():
+        process_table.delete(*process_table.get_children())
+        clear_results_only()
+        process_id_entry.delete(0, 'end')
+        arrival_time_entry.delete(0, 'end')
+        duration_time_entry.delete(0, 'end')
+        time_quantum_entry.delete(0, 'end')
+
+    reset_button = tk.Button(frame, text="Resetear todo", command=reset_all)
     
-    clear_button.grid(row=11, column=0, pady=10)
-    reset_button.grid(row=11, column=1, pady=10)
+    clear_button.grid(row=12, column=0, pady=10)
+    reset_button.grid(row=12, column=1, pady=10)
 
     root.mainloop()
