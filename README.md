@@ -1,5 +1,7 @@
 # Planificador interactivo de procesos
 
+[![DOI](https://zenodo.org/badge/1310969507.svg)](https://doi.org/10.5281/zenodo.21533095)
+
 Aplicación educativa de escritorio para estudiar algoritmos clásicos de planificación
 de CPU. Permite introducir procesos, ejecutar distintas políticas y comparar sus
 tiempos de finalización, espera y retorno mediante una tabla de ciclos interactiva.
@@ -57,6 +59,11 @@ La [guía didáctica](docs/GUIA_DIDACTICA.md) incluye resultados de aprendizaje,
 una actividad comparativa y las limitaciones del modelo. La
 [referencia de algoritmos](docs/ALGORITMOS.md) resume las decisiones de cada
 política y las métricas calculadas.
+
+## Cita
+
+Pedraza Dorado, Aníbal. (2024). *Planificador interactivo de procesos*.
+Zenodo. [![DOI](https://zenodo.org/badge/1310969507.svg)](https://doi.org/10.5281/zenodo.21533095)
 
 ## Estructura
 
