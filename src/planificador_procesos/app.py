@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from .actions import SchedulerActions
 from .core import Process, SUPPORTED_ALGORITHMS, SimulationResult, simulate
 
 
@@ -15,17 +16,20 @@ EXAMPLE_PROCESSES = (
 )
 
 
-class SchedulerApp(ttk.Frame):
+class SchedulerApp(SchedulerActions, ttk.Frame):
     """Ventana principal y coordinación entre formularios, motor y resultados."""
 
     def __init__(self, master: tk.Tk) -> None:
         super().__init__(master, padding=12)
         self.master = master
+        self.last_result: SimulationResult | None = None
         self.pack(fill="both", expand=True)
         self._configure_window()
         self._build_controls()
         self._build_process_table()
         self._build_result_area()
+        self._build_menus()
+        self._initialize_document()
 
     def _configure_window(self) -> None:
         self.master.title("Planificador interactivo de procesos")
@@ -212,7 +216,9 @@ class SchedulerApp(ttk.Frame):
             "end",
             values=(process.process_id, process.arrival_time, process.duration_time),
         )
+        self.clear_results()
         self._suggest_process_id()
+        self.status_var.set("Proceso añadido. Vuelva a calcular la planificación.")
 
     def _suggest_process_id(self) -> None:
         existing = {
@@ -250,6 +256,7 @@ class SchedulerApp(ttk.Frame):
             )
         self._suggest_process_id()
         self.status_var.set("Ejemplo cargado. Pruebe los cuatro algoritmos.")
+        self._update_document_title()
 
     def _read_processes(self) -> list[Process]:
         return [
@@ -277,6 +284,7 @@ class SchedulerApp(ttk.Frame):
 
     def _show_result(self, result: SimulationResult, processes: list[Process]) -> None:
         self.clear_results()
+        self.last_result = result
         for item in result.processes:
             self.result_table.insert(
                 "",
@@ -298,10 +306,11 @@ class SchedulerApp(ttk.Frame):
             f"{len(result.processes)} procesos · {result.makespan} ciclos"
         )
         self._render_timeline(result, processes)
+        self._update_document_title()
 
     def _render_timeline(self, result: SimulationResult, processes: list[Process]) -> None:
         process_map = {item.process_id: item for item in processes}
-        ttk.Label(self.timeline_grid, text=result.algorithm, width=14, anchor="w").grid(
+        ttk.Label(self.timeline_grid, text=(f"{result.algorithm} (q={self.quantum_var.get()})" if result.algorithm == "Round Robin" else result.algorithm), width=22, anchor="w").grid(
             row=0, column=0, sticky="nsew"
         )
         for cycle in range(1, result.makespan + 1):
@@ -344,6 +353,7 @@ class SchedulerApp(ttk.Frame):
                 ).grid(row=first_core_row + core - 1, column=cycle, sticky="nsew", pady=(6, 0))
 
     def clear_results(self) -> None:
+        self.last_result = None
         for item_id in self.result_table.get_children():
             self.result_table.delete(item_id)
         for widget in self.timeline_grid.winfo_children():
@@ -351,6 +361,7 @@ class SchedulerApp(ttk.Frame):
         self.average_waiting_var.set("—")
         self.average_turnaround_var.set("—")
         self.status_var.set("Resultados limpiados.")
+        self._update_document_title()
 
     def reset_all(self) -> None:
         for item_id in self.process_table.get_children():

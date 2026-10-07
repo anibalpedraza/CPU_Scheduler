@@ -7,6 +7,9 @@
   Python. En algunas distribuciones GNU/Linux debe instalarse con el gestor de
   paquetes del sistema.
 
+- ReportLab y openpyxl para exportar PDF y Excel, instaladas con `requirements.txt`.
+  La interfaz y el CSV funcionan sin estas bibliotecas.
+
 ## Entorno virtual
 
 ### Windows PowerShell

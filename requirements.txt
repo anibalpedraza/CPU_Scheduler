@@ -1,1 +1,2 @@
-# La aplicación estable usa únicamente la biblioteca estándar de Python.
+reportlab>=4,<5
+openpyxl>=3.1,<4

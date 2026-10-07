@@ -8,6 +8,7 @@ version = "1.0.0"
 description = "Simulador educativo interactivo de algoritmos de planificación de CPU"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = ["reportlab>=4,<5", "openpyxl>=3.1,<4"]
 authors = [
   { name = "Aníbal Pedraza Dorado", email = "anibal.pedraza@uclm.es" }
 ]
