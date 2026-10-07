@@ -6,7 +6,7 @@ Aplicación educativa de escritorio para estudiar algoritmos clásicos de planif
 de CPU. Permite introducir procesos, ejecutar distintas políticas y comparar sus
 tiempos de finalización, espera y retorno mediante una tabla de ciclos interactiva.
 
-Desarrollada por Aníbal Pedraza para la asignatura Informática de 1er curso de los Grados en Ingeniería Industrial.
+Desarrollada por Aníbal Pedraza para la asignatura Informática de primer curso de los Grados en Ingeniería Industrial.
 
 ## Funcionalidades
 
@@ -14,14 +14,11 @@ Desarrollada por Aníbal Pedraza para la asignatura Informática de 1er curso de
 - Shortest Job First (SJF).
 - Shortest Remaining Time First (SRTF).
 - Round Robin con *quantum* configurable.
+- Número de núcleos configurable y asignación por CPU en la tabla de ciclos.
 - Validación de identificadores, llegadas y duraciones.
 - Métricas individuales y valores medios.
 - Línea temporal con ejecución (`X`), espera (`O`) y llegadas sombreadas.
-- Caso de ejemplo precargado.
-- Motor independiente de la interfaz y probado automáticamente.
-
-La versión estable representa una CPU. El trabajo multinúcleo permanece aislado en
-la rama `experimental/multicore-scheduling` porque todavía no está validado.
+- Caso de ejemplo precargado en la aplicación.
 
 ## Ejecución rápida
 
@@ -43,16 +40,6 @@ planificador-procesos
 
 No requiere bibliotecas externas durante la ejecución.
 
-## Verificación
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m unittest discover -s tests -v
-```
-
-Las pruebas comprueban validación, métricas, apropiación en SRTF y rotación de
-Round Robin.
-
 ## Uso docente
 
 La [guía didáctica](docs/GUIA_DIDACTICA.md) incluye resultados de aprendizaje,
@@ -68,7 +55,7 @@ Zenodo. [![DOI](https://zenodo.org/badge/1310969507.svg)](https://doi.org/10.528
 ## Estructura
 
 ```text
-src/planificador_procesos/  motor y aplicación estable
+src/planificador_procesos/  motor y aplicación
 tests/                      pruebas automatizadas
 docs/                       instalación y guía didáctica
 ```

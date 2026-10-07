@@ -9,9 +9,9 @@ from .core import Process, SUPPORTED_ALGORITHMS, SimulationResult, simulate
 
 
 EXAMPLE_PROCESSES = (
-    Process("P1", 0, 6),
-    Process("P2", 1, 3),
-    Process("P3", 2, 1),
+    Process("A", 0, 6),
+    Process("B", 1, 3),
+    Process("C", 2, 1),
 )
 
 
@@ -73,7 +73,7 @@ class SchedulerApp(ttk.Frame):
         ttk.Label(controls, text="ID").grid(row=0, column=2, sticky="w")
         ttk.Label(controls, text="Llegada").grid(row=0, column=3, sticky="w")
         ttk.Label(controls, text="Duración").grid(row=0, column=4, sticky="w")
-        self.process_id_var = tk.StringVar()
+        self.process_id_var = tk.StringVar(value="A")
         self.arrival_var = tk.StringVar(value="0")
         self.duration_var = tk.StringVar(value="1")
         ttk.Entry(controls, textvariable=self.process_id_var, width=12).grid(
@@ -91,6 +91,16 @@ class SchedulerApp(ttk.Frame):
         )
         ttk.Button(controls, text="Cargar ejemplo", command=self.load_example).grid(
             row=1, column=6, padx=(8, 0)
+        )
+
+        ttk.Label(controls, text="Núcleos").grid(row=2, column=0, pady=(10, 0), sticky="w")
+        self.core_count_var = tk.StringVar(value="1")
+        self.core_count_entry = ttk.Spinbox(
+            controls, from_=1, to=64, textvariable=self.core_count_var, width=10
+        )
+        self.core_count_entry.grid(row=2, column=1, pady=(10, 0), padx=(0, 18), sticky="ew")
+        ttk.Label(controls, text="Cola compartida · Un proceso por núcleo").grid(
+            row=2, column=2, columnspan=5, pady=(10, 0), sticky="w"
         )
 
         for column in range(7):
@@ -202,8 +212,24 @@ class SchedulerApp(ttk.Frame):
             "end",
             values=(process.process_id, process.arrival_time, process.duration_time),
         )
-        self.process_id_var.set("")
-        self.process_id_var.set(f"P{len(self.process_table.get_children()) + 1}")
+        self._suggest_process_id()
+
+    def _suggest_process_id(self) -> None:
+        existing = {
+            str(self.process_table.item(item_id, "values")[0])
+            for item_id in self.process_table.get_children()
+        }
+        number = 1
+        while True:
+            remaining = number
+            candidate = ""
+            while remaining:
+                remaining, digit = divmod(remaining - 1, 26)
+                candidate = chr(ord("A") + digit) + candidate
+            if candidate not in existing:
+                self.process_id_var.set(candidate)
+                return
+            number += 1
 
     def remove_selected(self) -> None:
         selected = self.process_table.selection()
@@ -222,7 +248,7 @@ class SchedulerApp(ttk.Frame):
                 "end",
                 values=(process.process_id, process.arrival_time, process.duration_time),
             )
-        self.process_id_var.set("P4")
+        self._suggest_process_id()
         self.status_var.set("Ejemplo cargado. Pruebe los cuatro algoritmos.")
 
     def _read_processes(self) -> list[Process]:
@@ -240,7 +266,10 @@ class SchedulerApp(ttk.Frame):
             quantum = None
             if self.algorithm_var.get() == "Round Robin":
                 quantum = int(self.quantum_var.get())
-            result = simulate(processes, self.algorithm_var.get(), quantum=quantum)
+            result = simulate(
+                processes, self.algorithm_var.get(), quantum=quantum,
+                core_count=int(self.core_count_var.get()),
+            )
         except ValueError as error:
             messagebox.showerror("No se puede calcular", str(error), parent=self.master)
             return
@@ -263,7 +292,11 @@ class SchedulerApp(ttk.Frame):
             )
         self.average_waiting_var.set(f"{result.average_waiting_time:.2f}")
         self.average_turnaround_var.set(f"{result.average_turnaround_time:.2f}")
-        self.status_var.set(f"{result.algorithm} · {len(result.processes)} procesos")
+        self.status_var.set(
+            f"{result.algorithm} · {result.core_count} "
+            f"{'núcleo' if result.core_count == 1 else 'núcleos'} · "
+            f"{len(result.processes)} procesos · {result.makespan} ciclos"
+        )
         self._render_timeline(result, processes)
 
     def _render_timeline(self, result: SimulationResult, processes: list[Process]) -> None:
@@ -297,6 +330,19 @@ class SchedulerApp(ttk.Frame):
                 )
                 cell.grid(row=row, column=cycle, sticky="nsew")
 
+        first_core_row = len(result.timeline) + 1
+        assignment_width = max(3, *(len(process_id) for process_id in result.timeline))
+        for core, cells in enumerate(result.core_timeline, start=1):
+            ttk.Label(self.timeline_grid, text=f"CPU {core}", width=14, anchor="w").grid(
+                row=first_core_row + core - 1, column=0, sticky="nsew", pady=(6, 0)
+            )
+            for cycle, process_id in enumerate(cells, start=1):
+                tk.Label(
+                    self.timeline_grid, text=process_id if process_id is not None else "—",
+                    width=assignment_width, relief="groove",
+                    bg="#dceefb" if process_id is not None else "SystemButtonFace",
+                ).grid(row=first_core_row + core - 1, column=cycle, sticky="nsew", pady=(6, 0))
+
     def clear_results(self) -> None:
         for item_id in self.result_table.get_children():
             self.result_table.delete(item_id)
@@ -310,7 +356,7 @@ class SchedulerApp(ttk.Frame):
         for item_id in self.process_table.get_children():
             self.process_table.delete(item_id)
         self.clear_results()
-        self.process_id_var.set("P1")
+        self.process_id_var.set("A")
         self.arrival_var.set("0")
         self.duration_var.set("1")
 

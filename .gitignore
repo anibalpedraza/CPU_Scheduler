@@ -14,3 +14,7 @@ build/
 *.log
 Thumbs.db
 .DS_Store
+
+# Archivos locales de automatización y versiones anteriores.
+/.github/workflows/
+/legacy/
