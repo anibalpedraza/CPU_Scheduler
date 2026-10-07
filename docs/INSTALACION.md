@@ -35,7 +35,7 @@ python run.py
 python -c "import tkinter; print(tkinter.TkVersion)"
 ```
 
-Si el comando muestra una versión y no produce errores, el entorno gráfico está
+Si el comando muestra una versión y no produce errores, el módulo Tkinter está
 disponible.
 
 ## Solución de problemas de Tcl/Tk

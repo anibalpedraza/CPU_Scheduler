@@ -10,26 +10,27 @@ introductorias de Informática y Sistemas Operativos en titulaciones de Ingenier
 
 Tras utilizar el recurso, el alumnado debería poder:
 
-- diferenciar algoritmos apropiativos y no apropiativos;
-- calcular tiempos de finalización, espera y retorno;
-- explicar el efecto del instante de llegada y la duración;
-- analizar el compromiso entre tiempo medio, equidad y tiempo de respuesta;
-- comparar FCFS, SJF, SRTF y Round Robin con una misma carga.
+- Diferenciar algoritmos apropiativos y no apropiativos (con/sin expulsión).
+- Calcular tiempos de finalización, espera y retorno.
+- Explicar el efecto del instante de llegada y la duración.
+- Analizar el compromiso entre tiempo medio y tiempo de respuesta.
+- Comparar FCFS, SJF, SRTF y Round Robin con una misma carga.
 
 ## Uso básico
 
-1. Seleccione un algoritmo.
+1. Seleccione un algoritmo y el número de núcleos (1 para el modo mononúcleo).
 2. Introduzca para cada proceso un identificador, su instante de llegada y su
    duración.
 3. Para Round Robin, indique el *quantum*.
-4. Pulse **Calcular**.
+4. Pulse **Calcular planificación**.
 5. Compare la tabla de resultados y la tabla de ciclos.
 
 En la tabla de ciclos:
 
-- `X` indica que el proceso usa la CPU;
-- `O` indica que el proceso espera en la cola;
-- el sombreado marca el instante de llegada.
+- `X` indica que el proceso usa la CPU.
+- `O` indica que el proceso espera en la cola.
+- El sombreado marca el instante de llegada.
+- Las filas CPU muestran qué proceso ejecuta en cada núcleo (`—` indica un núcleo libre).
 
 ## Actividad propuesta
 
@@ -37,19 +38,15 @@ Introduzca esta carga:
 
 | Proceso | Llegada | Duración |
 |---|---:|---:|
-| P1 | 0 | 6 |
-| P2 | 1 | 3 |
-| P3 | 2 | 1 |
+| A | 0 | 6 |
+| B | 1 | 3 |
+| C | 2 | 1 |
 
-Ejecute los cuatro algoritmos y responda:
+Con un núcleo, ejecute los cuatro algoritmos y responda:
 
 1. ¿Qué algoritmo minimiza el tiempo medio de espera?
 2. ¿En cuáles se interrumpe un proceso ya iniciado?
 3. ¿Cómo cambia Round Robin con *quantum* 1, 2 y 4?
 4. ¿Qué criterio elegiría para un sistema interactivo? Justifique la respuesta.
-
-## Limitaciones
-
-La versión estable simula una única CPU, tiempos enteros, ráfagas exclusivamente
-de CPU y coste nulo de cambio de contexto. La rama experimental multinúcleo no
-debe utilizarse para obtener resultados docentes validados.
+5. Repita con dos núcleos. ¿Qué procesos se solapan? ¿Por qué un proceso aislado
+   no termina antes aunque se añadan más núcleos?

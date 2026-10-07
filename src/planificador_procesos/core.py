@@ -1,7 +1,8 @@
-"""Motor puro de simulación de algoritmos de planificación mononúcleo."""
+"""Motor puro de simulación de planificación con uno o varios núcleos."""
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from statistics import fmean
 from typing import Iterable, Sequence
@@ -21,10 +22,10 @@ class Process:
     def __post_init__(self) -> None:
         if not self.process_id.strip():
             raise ValueError("El identificador del proceso no puede estar vacío.")
-        if self.arrival_time < 0:
-            raise ValueError("El tiempo de llegada no puede ser negativo.")
-        if self.duration_time <= 0:
-            raise ValueError("La duración debe ser mayor que cero.")
+        if type(self.arrival_time) is not int or self.arrival_time < 0:
+            raise ValueError("El tiempo de llegada debe ser un entero no negativo.")
+        if type(self.duration_time) is not int or self.duration_time <= 0:
+            raise ValueError("La duración debe ser un entero mayor que cero.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,12 +42,14 @@ class ProcessResult:
 
 @dataclass(frozen=True, slots=True)
 class SimulationResult:
-    """Resultado completo, incluidas métricas y línea temporal."""
+    """Métricas, estados por proceso y asignaciones por núcleo y ciclo."""
 
     algorithm: str
     processes: tuple[ProcessResult, ...]
     timeline: dict[str, tuple[str, ...]]
     makespan: int
+    core_count: int = 1
+    core_timeline: tuple[tuple[str | None, ...], ...] = ()
 
     @property
     def average_waiting_time(self) -> float:
@@ -62,58 +65,30 @@ def simulate(
     algorithm: str,
     *,
     quantum: int | None = None,
+    core_count: int = 1,
 ) -> SimulationResult:
-    """Simula una carga en una CPU con la política seleccionada."""
+    """Simula núcleos idénticos con cola global y cambios de contexto sin coste.
+
+    Cada proceso ocupa como máximo un núcleo por ciclo. Las llegadas en t
+    pueden ejecutar en [t, t+1). En RR entran antes de los turnos vencidos en t.
+    """
 
     process_list = list(processes)
     _validate_processes(process_list)
     if algorithm not in SUPPORTED_ALGORITHMS:
         raise ValueError(f"Algoritmo no compatible: {algorithm}.")
-    if algorithm == "Round Robin" and (quantum is None or quantum <= 0):
-        raise ValueError("Round Robin requiere un quantum mayor que cero.")
+    if type(core_count) is not int or core_count <= 0:
+        raise ValueError("El número de núcleos debe ser un entero mayor que cero.")
+    if algorithm == "Round Robin" and (type(quantum) is not int or quantum <= 0):
+        raise ValueError("Round Robin requiere un quantum entero mayor que cero.")
 
-    if not process_list:
-        return SimulationResult(algorithm, (), {}, 0)
-
-    if algorithm == "FCFS":
-        completed, timeline, makespan = _simulate_non_preemptive(process_list, shortest=False)
-    elif algorithm == "SJF":
-        completed, timeline, makespan = _simulate_non_preemptive(process_list, shortest=True)
-    elif algorithm == "SRTF":
-        completed, timeline, makespan = _simulate_srtf(process_list)
-    else:
-        completed, timeline, makespan = _simulate_round_robin(process_list, quantum or 1)
-
-    by_id = {item.process_id: item for item in completed}
-    ordered = tuple(by_id[item.process_id] for item in process_list)
-    frozen_timeline = {key: tuple(values) for key, values in timeline.items()}
-    return SimulationResult(algorithm, ordered, frozen_timeline, makespan)
+    return _simulate(process_list, algorithm, core_count, quantum)
 
 
 def _validate_processes(processes: Sequence[Process]) -> None:
     process_ids = [item.process_id for item in processes]
     if len(process_ids) != len(set(process_ids)):
         raise ValueError("Los identificadores de proceso deben ser únicos.")
-
-
-def _blank_timeline(processes: Sequence[Process]) -> dict[str, list[str]]:
-    return {item.process_id: [] for item in processes}
-
-
-def _mark_cycle(
-    timeline: dict[str, list[str]],
-    processes_by_id: dict[str, Process],
-    cycle: int,
-    running_id: str | None,
-    queued_ids: set[str],
-) -> None:
-    for process_id, cells in timeline.items():
-        while len(cells) < cycle:
-            cells.append("")
-        if process_id == running_id:
-            cells[cycle - 1] = "X"
-        elif process_id in queued_ids and processes_by_id[process_id].arrival_time < cycle:
-            cells[cycle - 1] = "O"
 
 
 def _result(process: Process, completed_time: int) -> ProcessResult:
@@ -128,154 +103,79 @@ def _result(process: Process, completed_time: int) -> ProcessResult:
     )
 
 
-def _simulate_non_preemptive(
+def _simulate(
     processes: Sequence[Process],
-    *,
-    shortest: bool,
-) -> tuple[list[ProcessResult], dict[str, list[str]], int]:
-    pending = list(enumerate(processes))
-    queue: list[tuple[int, Process]] = []
-    completed: list[ProcessResult] = []
-    timeline = _blank_timeline(processes)
-    process_map = {item.process_id: item for item in processes}
+    algorithm: str,
+    core_count: int,
+    quantum: int | None,
+) -> SimulationResult:
+    # Los índices preservan el orden de entrada al desempatar y al devolver métricas.
+    pending = deque(sorted(range(len(processes)), key=lambda i: (processes[i].arrival_time, i)))
+    ready: deque[int] = deque()
+    running: list[int | None] = [None] * core_count
+    slices = [0] * core_count
+    expired: list[int] = []
+    remaining = [item.duration_time for item in processes]
+    completed: dict[int, int] = {}
+    timeline: dict[str, list[str]] = {item.process_id: [] for item in processes}
+    core_timeline: list[list[str | None]] = [[] for _ in range(core_count)]
     time = 0
 
-    def add_arrivals() -> None:
-        for indexed in pending[:]:
-            if indexed[1].arrival_time <= time:
-                queue.append(indexed)
-                pending.remove(indexed)
-        if shortest:
-            queue.sort(key=lambda item: (item[1].duration_time, item[1].arrival_time, item[0]))
+    while pending or ready or expired or any(i is not None for i in running):
+        while pending and processes[pending[0]].arrival_time <= time:
+            ready.append(pending.popleft())
+        ready.extend(expired)
+        expired.clear()
 
-    add_arrivals()
-    while pending or queue:
-        if not queue:
-            time += 1
-            add_arrivals()
-            _mark_cycle(timeline, process_map, time, None, {item[1].process_id for item in queue})
-            continue
+        if algorithm in ("SJF", "SRTF"):
+            candidates = list(ready)
+            if algorithm == "SRTF":
+                candidates.extend(i for i in running if i is not None)
+            candidates.sort(key=lambda i: (remaining[i], processes[i].arrival_time, i))
+            if algorithm == "SRTF":
+                # Mantener en su núcleo los seleccionados que ya estaban ejecutando.
+                selected = set(candidates[:core_count])
+                for core, index in enumerate(running):
+                    if index not in selected:
+                        running[core] = None
+                active = {i for i in running if i is not None}
+                ready = deque(i for i in candidates if i not in active)
+            else:
+                ready = deque(candidates)
 
-        _, process = queue.pop(0)
-        for _ in range(process.duration_time):
-            time += 1
-            add_arrivals()
-            _mark_cycle(
-                timeline,
-                process_map,
-                time,
-                process.process_id,
-                {item[1].process_id for item in queue},
+        for core, index in enumerate(running):
+            if index is None and ready:
+                running[core] = ready.popleft()
+                slices[core] = 0
+
+        active = {i for i in running if i is not None}
+        queued = set(ready)
+        for index, process in enumerate(processes):
+            timeline[process.process_id].append(
+                "X" if index in active else "O" if index in queued else ""
             )
-        completed.append(_result(process, time))
+        for core, index in enumerate(running):
+            core_timeline[core].append(processes[index].process_id if index is not None else None)
 
-    return completed, timeline, time
-
-
-def _simulate_srtf(
-    processes: Sequence[Process],
-) -> tuple[list[ProcessResult], dict[str, list[str]], int]:
-    pending = list(enumerate(processes))
-    queue: list[tuple[int, Process]] = []
-    remaining = {item.process_id: item.duration_time for item in processes}
-    completed: list[ProcessResult] = []
-    timeline = _blank_timeline(processes)
-    process_map = {item.process_id: item for item in processes}
-    time = 0
-
-    def add_arrivals() -> None:
-        for indexed in pending[:]:
-            if indexed[1].arrival_time <= time:
-                queue.append(indexed)
-                pending.remove(indexed)
-        queue.sort(
-            key=lambda item: (
-                remaining[item[1].process_id],
-                item[1].arrival_time,
-                item[0],
-            )
-        )
-
-    add_arrivals()
-    while pending or queue:
-        if not queue:
-            time += 1
-            add_arrivals()
-            _mark_cycle(timeline, process_map, time, None, {item[1].process_id for item in queue})
-            continue
-
-        indexed = queue.pop(0)
-        process = indexed[1]
         time += 1
-        remaining[process.process_id] -= 1
-        add_arrivals()
-        _mark_cycle(
-            timeline,
-            process_map,
-            time,
-            process.process_id,
-            {item[1].process_id for item in queue},
-        )
-        if remaining[process.process_id] == 0:
-            completed.append(_result(process, time))
-        else:
-            queue.append(indexed)
-            queue.sort(
-                key=lambda item: (
-                    remaining[item[1].process_id],
-                    item[1].arrival_time,
-                    item[0],
-                )
-            )
+        for core, index in enumerate(running):
+            if index is None:
+                continue
+            remaining[index] -= 1
+            slices[core] += 1
+            if remaining[index] == 0:
+                completed[index] = time
+                running[core] = None
+            elif algorithm == "Round Robin" and slices[core] == quantum:
+                # Al inicio del siguiente ciclo, las llegadas preceden a estos turnos.
+                expired.append(index)
+                running[core] = None
 
-    return completed, timeline, time
-
-
-def _simulate_round_robin(
-    processes: Sequence[Process],
-    quantum: int,
-) -> tuple[list[ProcessResult], dict[str, list[str]], int]:
-    pending = list(enumerate(processes))
-    queue: list[tuple[int, Process]] = []
-    remaining = {item.process_id: item.duration_time for item in processes}
-    completed: list[ProcessResult] = []
-    timeline = _blank_timeline(processes)
-    process_map = {item.process_id: item for item in processes}
-    time = 0
-
-    def add_arrivals() -> None:
-        for indexed in pending[:]:
-            if indexed[1].arrival_time <= time:
-                queue.append(indexed)
-                pending.remove(indexed)
-
-    add_arrivals()
-    while pending or queue:
-        if not queue:
-            time += 1
-            add_arrivals()
-            _mark_cycle(timeline, process_map, time, None, {item[1].process_id for item in queue})
-            continue
-
-        indexed = queue.pop(0)
-        process = indexed[1]
-        executed = 0
-        while executed < quantum and remaining[process.process_id] > 0:
-            time += 1
-            add_arrivals()
-            remaining[process.process_id] -= 1
-            executed += 1
-            _mark_cycle(
-                timeline,
-                process_map,
-                time,
-                process.process_id,
-                {item[1].process_id for item in queue},
-            )
-
-        if remaining[process.process_id] == 0:
-            completed.append(_result(process, time))
-        else:
-            queue.append(indexed)
-
-    return completed, timeline, time
+    return SimulationResult(
+        algorithm=algorithm,
+        processes=tuple(_result(item, completed[i]) for i, item in enumerate(processes)),
+        timeline={key: tuple(values) for key, values in timeline.items()},
+        makespan=time,
+        core_count=core_count,
+        core_timeline=tuple(tuple(cells) for cells in core_timeline),
+    )
