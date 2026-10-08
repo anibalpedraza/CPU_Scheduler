@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from planificador_procesos.metadata import VERSION
 from tools.assemble_release import PLATFORMS, assemble, package_names
-from tools.build_macos import clean_finder_metadata, native_architecture
+from tools.build_macos import clean_finder_metadata, native_architecture, verify_architecture
 from tools.packaging_common import build_context, check_version, source_fingerprint, write_build_metadata, prepare_license_files
 
 SOURCE_SHA256 = source_fingerprint()
@@ -52,6 +52,10 @@ class PackagingToolsTests(unittest.TestCase):
             self.assertIn("com.apple.FinderInfo", attributes)
             self.assertIn("com.apple.ResourceFork", attributes)
             self.assertTrue((bundle / "link").is_symlink())
+
+    @unittest.skipUnless(sys.platform == "darwin", "Binario y herramientas nativas de macOS")
+    def test_macos_architecture_validator_accepts_the_native_python_binary(self):
+        verify_architecture(Path(sys.executable), native_architecture())
 
     def make_assets(self, root):
         entries = []

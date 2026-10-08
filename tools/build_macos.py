@@ -41,13 +41,18 @@ def clean_finder_metadata(bundle: Path) -> None:
         subprocess.run(["xattr", "-drs", name, str(bundle)], check=True)
 
 
+def verify_architecture(executable: Path, architecture: str) -> None:
+    # lipo clásico consume todas las palabras tras -verify_arch como arquitecturas.
+    subprocess.run(["lipo", str(executable), "-verify_arch", architecture], check=True)
+
+
 def verify_bundle(bundle: Path, architecture: str, version: str) -> dict:
     with (bundle / "Contents/Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
     if info.get("CFBundleShortVersionString") != version or info.get("CFBundleVersion") != version:
         raise RuntimeError("La versión de Info.plist no coincide con la aplicación")
     executable = bundle / "Contents/MacOS" / info["CFBundleExecutable"]
-    subprocess.run(["lipo", "-verify_arch", architecture, str(executable)], check=True)
+    verify_architecture(executable, architecture)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)], check=True)
     if not os.access(executable, os.X_OK):
         raise RuntimeError("El ejecutable macOS no conserva permisos de ejecución")
