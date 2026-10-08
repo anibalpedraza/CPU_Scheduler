@@ -142,5 +142,5 @@ class SimulationActions:
         return True
 
     def _file_shortcut(self, action):
-        action()
+        self.master.after(0, action)
         return "break"

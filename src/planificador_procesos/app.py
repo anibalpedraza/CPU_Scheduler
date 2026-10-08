@@ -39,7 +39,7 @@ class SchedulerApp(SchedulerActions, ttk.Frame):
         if "vista" in style.theme_names():
             style.theme_use("vista")
         style.configure("Title.TLabel", font=("TkDefaultFont", 16, "bold"))
-        style.configure("Subtitle.TLabel", foreground="#444444")
+        # Subtitle.TLabel hereda el color del tema, también en modo oscuro.
 
     def _build_controls(self) -> None:
         header = ttk.Frame(self)
@@ -325,7 +325,8 @@ class SchedulerApp(SchedulerActions, ttk.Frame):
                 width=14,
                 anchor="w",
                 relief="groove",
-                bg="#d9d9d9" if arrival == 0 else "SystemButtonFace",
+                bg="#d9d9d9" if arrival == 0 else "#f0f0f0",
+                fg="#202020",
             )
             name.grid(row=row, column=0, sticky="nsew")
             for cycle in range(1, result.makespan + 1):
@@ -335,7 +336,8 @@ class SchedulerApp(SchedulerActions, ttk.Frame):
                     text=value,
                     width=3,
                     relief="groove",
-                    bg="#d9d9d9" if arrival == cycle else "SystemButtonFace",
+                    bg="#d9d9d9" if arrival == cycle else "#f0f0f0",
+                    fg="#202020",
                 )
                 cell.grid(row=row, column=cycle, sticky="nsew")
 
@@ -349,7 +351,8 @@ class SchedulerApp(SchedulerActions, ttk.Frame):
                 tk.Label(
                     self.timeline_grid, text=process_id if process_id is not None else "—",
                     width=assignment_width, relief="groove",
-                    bg="#dceefb" if process_id is not None else "SystemButtonFace",
+                    bg="#dceefb" if process_id is not None else "#f0f0f0",
+                    fg="#202020",
                 ).grid(row=first_core_row + core - 1, column=cycle, sticky="nsew", pady=(6, 0))
 
     def clear_results(self) -> None:

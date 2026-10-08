@@ -167,8 +167,8 @@ class SchedulerAppTests(unittest.TestCase):
 
             with patch("planificador_procesos.actions.filedialog.asksaveasfilename", return_value=str(target)), \
                     patch("planificador_procesos.actions.messagebox.showinfo"):
-                self.root.after(10, invoke_export)
                 self.app.export_csv_dialog()
+                invoke_export()
             self.assertFalse(callback_errors, str(callback_errors))
             paths = sorted(Path(directory).glob("*.csv"))
             self.assertEqual([path.name for path in paths], ["simulation_procesos.csv", "simulation_resultados.csv"])

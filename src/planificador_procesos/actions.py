@@ -9,6 +9,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .core import Process
+from .dialogs import existing_dialog, present_dialog, remember_dialog
 from .simulation_actions import SimulationActions
 from .exports import ExportData, export_csv, export_excel, export_pdf, pdf_minimum_font_size
 from .metadata import (APP_NAME, AUTHOR, CODE_LICENSE, CONTENT_LICENSE,
@@ -18,42 +19,53 @@ from .metadata import (APP_NAME, AUTHOR, CODE_LICENSE, CONTENT_LICENSE,
 class SchedulerActions(SimulationActions):
     """Acciones de la ventana principal, sin modificar el motor de simulación."""
 
+    def _menu_command(self, action):
+        # Salir del callback del menú nativo antes de abrir ventanas o selectores.
+        # Un temporizador normal evita también el bucle de dibujo idle de Tk Aqua.
+        return lambda: self.master.after(0, action)
+
     def _build_menus(self) -> None:
-        self.menu_bar = tk.Menu(self)
+        is_macos = self.master.tk.call("tk", "windowingsystem") == "aqua"
+        modifier = "Command" if is_macos else "Control"
+        key_label = "Command" if is_macos else "Ctrl"
+        self.menu_bar = tk.Menu(self, tearoff=False)
         file_menu = tk.Menu(self.menu_bar, tearoff=False)
-        file_menu.add_command(label="Nuevo", accelerator="Ctrl+N", command=self.new_simulation)
-        file_menu.add_command(label="Abrir…", accelerator="Ctrl+O", command=self.open_document)
+        file_menu.add_command(label="Nuevo", accelerator=f"{key_label}+N", command=self._menu_command(self.new_simulation))
+        file_menu.add_command(label="Abrir…", accelerator=f"{key_label}+O", command=self._menu_command(self.open_document))
         file_menu.add_separator()
-        file_menu.add_command(label="Guardar", accelerator="Ctrl+S", command=self.save_document)
-        file_menu.add_command(label="Guardar como…", accelerator="Ctrl+Mayús+S", command=lambda: self.save_document(save_as=True))
+        file_menu.add_command(label="Guardar", accelerator=f"{key_label}+S", command=self._menu_command(self.save_document))
+        file_menu.add_command(label="Guardar como…", accelerator=f"{key_label}+Mayús+S", command=self._menu_command(lambda: self.save_document(save_as=True)))
         export_menu = tk.Menu(file_menu, tearoff=False)
-        export_menu.add_command(label="CSV…", command=self.export_csv_dialog)
-        export_menu.add_command(label="PDF…", command=lambda: self.export_report("pdf"))
-        export_menu.add_command(label="Excel…", command=lambda: self.export_report("xlsx"))
+        export_menu.add_command(label="CSV…", command=self._menu_command(self.export_csv_dialog))
+        export_menu.add_command(label="PDF…", command=self._menu_command(lambda: self.export_report("pdf")))
+        export_menu.add_command(label="Excel…", command=self._menu_command(lambda: self.export_report("xlsx")))
         file_menu.add_cascade(label="Exportar", menu=export_menu)
         file_menu.add_separator()
-        file_menu.add_command(label="Salir", accelerator="Alt+F4", command=self.close_application)
+        file_menu.add_command(label="Salir", accelerator="Command+Q" if is_macos else "Alt+F4", command=self._menu_command(self.close_application))
         self.menu_bar.add_cascade(label="Archivo", menu=file_menu)
         self.edit_menu = tk.Menu(self.menu_bar, tearoff=False, postcommand=self._update_edit_menu)
-        for label, shortcut, action in (("Cortar", "Ctrl+X", "cut"), ("Copiar", "Ctrl+C", "copy"),
-                                        ("Pegar", "Ctrl+V", "paste")):
+        for label, shortcut, action in (("Cortar", f"{key_label}+X", "cut"), ("Copiar", f"{key_label}+C", "copy"),
+                                        ("Pegar", f"{key_label}+V", "paste")):
             self.edit_menu.add_command(label=label, accelerator=shortcut,
-                                       command=lambda action=action: self.edit(action))
+                                       command=self._menu_command(lambda action=action: self.edit(action)))
         self.menu_bar.add_cascade(label="Edición", menu=self.edit_menu)
         help_menu = tk.Menu(self.menu_bar, tearoff=False)
-        help_menu.add_command(label="GitHub CPU Scheduler", command=lambda: self.open_link(REPOSITORY_URL))
+        help_menu.add_command(label="GitHub CPU Scheduler", command=self._menu_command(lambda: self.open_link(REPOSITORY_URL)))
         help_menu.add_separator()
-        help_menu.add_command(label="Acerca de…", command=self.show_about)
+        help_menu.add_command(label="Acerca de…", command=self._menu_command(self.show_about))
         self.menu_bar.add_cascade(label="Ayuda", menu=help_menu)
         self.master.configure(menu=self.menu_bar)
-        for sequence, action in (("<Control-n>", self.new_simulation), ("<Control-o>", self.open_document),
-                                 ("<Control-s>", self.save_document),
-                                 ("<Control-Shift-S>", lambda: self.save_document(save_as=True))):
+        for sequence, action in ((f"<{modifier}-n>", self.new_simulation), (f"<{modifier}-o>", self.open_document),
+                                 (f"<{modifier}-s>", self.save_document),
+                                 (f"<{modifier}-Shift-S>", lambda: self.save_document(save_as=True))):
             self.master.bind(sequence, lambda _event, action=action: self._file_shortcut(action))
+        if is_macos:
+            self.master.bind("<Command-q>", lambda _event: self._file_shortcut(self.close_application))
+            self.master.createcommand("tk::mac::Quit", self._menu_command(self.close_application))
         # Entry y Text conservan los atajos nativos. Treeview necesita enlaces propios.
         for table in (self.process_table, self.result_table):
             for key, action in (("x", "cut"), ("c", "copy"), ("v", "paste")):
-                table.bind(f"<Control-{key}>", lambda _event, action=action: self._edit_shortcut(action))
+                table.bind(f"<{modifier}-{key}>", lambda _event, action=action: self._edit_shortcut(action))
         for variable in (self.algorithm_var, self.quantum_var, self.core_count_var):
             variable.trace_add("write", self._invalidate_configuration)
 
@@ -152,12 +164,15 @@ class SchedulerActions(SimulationActions):
         return ExportData(processes, algorithm, quantum, core_count, self.last_result)
 
     def export_csv_dialog(self) -> None:
+        if existing_dialog(self, "_csv_dialog") is not None:
+            return
         try:
             self._export_data()
         except ValueError as error:
             messagebox.showinfo("Exportar CSV", str(error), parent=self.master)
             return
         dialog = tk.Toplevel(self.master)
+        remember_dialog(self, "_csv_dialog", dialog)
         dialog.title("Exportar como CSV")
         dialog.resizable(False, False)
         dialog.transient(self.master)
@@ -204,11 +219,11 @@ class SchedulerActions(SimulationActions):
 
         buttons = ttk.Frame(content)
         buttons.pack(fill="x", pady=(4, 0))
-        ttk.Button(buttons, text="Cancelar", command=dialog.destroy).pack(side="right")
+        cancel = ttk.Button(buttons, text="Cancelar", command=dialog.destroy)
+        cancel.pack(side="right")
         ttk.Button(buttons, text="Exportar…", command=save).pack(side="right", padx=8)
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
-        dialog.grab_set()
-        dialog.wait_window()
+        present_dialog(dialog, cancel, modal=True)
 
     def export_report(self, kind: str) -> None:
         try:
@@ -248,7 +263,10 @@ class SchedulerActions(SimulationActions):
             messagebox.showinfo("Abrir enlace", f"Abra este enlace en su navegador:\n{url}", parent=self.master)
 
     def show_about(self) -> None:
+        if existing_dialog(self, "_about_dialog") is not None:
+            return
         dialog = tk.Toplevel(self.master)
+        remember_dialog(self, "_about_dialog", dialog)
         dialog.title(f"Acerca de {APP_NAME}")
         dialog.resizable(False, False)
         dialog.transient(self.master)
@@ -261,17 +279,44 @@ class SchedulerActions(SimulationActions):
         ttk.Label(content, text=f"Código: licencia {CODE_LICENSE}\nMateriales educativos: {CONTENT_LICENSE} (Creative Commons Atribución)").pack(anchor="w", pady=(0, 10))
         license_row = ttk.Frame(content)
         license_row.pack(anchor="w", pady=(0, 10))
-        badge = tk.Canvas(license_row, width=38, height=30, highlightthickness=0)
+        badge = tk.Canvas(license_row, width=38, height=30, highlightthickness=0, bg="#f0f0f0")
         badge.pack(side="left", padx=(0, 8))
-        badge.create_oval(4, 2, 32, 28, width=2)
-        badge.create_text(18, 15, text="CC", font=("TkDefaultFont", 9, "bold"))
+        badge.create_oval(4, 2, 32, 28, width=2, outline="#202020")
+        badge.create_text(18, 15, text="CC", font=("TkDefaultFont", 9, "bold"), fill="#202020")
         ttk.Label(license_row, text="BY 4.0 · Atribución de los materiales educativos").pack(side="left")
         for label, url in (("GitHub CPU Scheduler", REPOSITORY_URL), ("Consultar CC BY 4.0", CONTENT_LICENSE_URL)):
             ttk.Button(content, text=label, command=lambda url=url: self.open_link(url)).pack(anchor="w", pady=3)
+        ttk.Button(content, text="Licencias de la aplicación…",
+                   command=self.show_licenses).pack(anchor="w", pady=3)
         close = ttk.Button(content, text="Cerrar", command=dialog.destroy)
         close.pack(anchor="e", pady=(14, 0))
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
         dialog.bind("<Return>", lambda _event: dialog.destroy())
-        dialog.grab_set()
-        close.focus_set()
-        dialog.wait_window()
+        present_dialog(dialog, close)
+
+
+    def show_licenses(self) -> None:
+        from .licensing import license_text
+        if existing_dialog(self, "_licenses_dialog") is not None:
+            return
+        notices = license_text()
+        dialog = tk.Toplevel(self.master)
+        remember_dialog(self, "_licenses_dialog", dialog)
+        dialog.title("Licencias de CPU Scheduler")
+        dialog.geometry("800x540")
+        dialog.transient(self.master)
+        content = ttk.Frame(dialog, padding=12)
+        content.pack(fill="both", expand=True)
+        body = ttk.Frame(content)
+        body.pack(fill="both", expand=True)
+        text = tk.Text(body, wrap="word", bg="#f0f0f0", fg="#202020")
+        scroll = ttk.Scrollbar(body, command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        text.pack(fill="both", expand=True)
+        text.insert("1.0", notices)
+        text.configure(state="disabled")
+        close = ttk.Button(content, text="Cerrar", command=dialog.destroy)
+        close.pack(anchor="e", pady=(8, 0))
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        present_dialog(dialog, close)

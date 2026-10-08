@@ -3,4 +3,4 @@
 from .core import Process, ProcessResult, SimulationResult, simulate
 
 __all__ = ["Process", "ProcessResult", "SimulationResult", "simulate"]
-__version__ = "1.0.0"
+from .metadata import VERSION as __version__
