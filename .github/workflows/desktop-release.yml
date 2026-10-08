@@ -1,0 +1,167 @@
+name: Escritorio - Windows, macOS y release
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Pruebas Python 3.10 y 3.12
+    uses: ./.github/workflows/tests.yml
+
+  windows:
+    name: Windows x64
+    needs: tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Instalar dependencias
+        run: python -c "import subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements-build.txt', '-e', '.'], check=True); subprocess.run([sys.executable, '-m', 'pip', 'check'], check=True)"
+      - name: Comprobar GUI y bibliotecas obligatorias
+        run: python -c "import tkinter as tk; import reportlab, openpyxl; root=tk.Tk(); root.withdraw(); root.destroy()"
+      - name: Ejecutar todas las pruebas
+        run: python -m unittest discover -s tests -v
+      - name: Construir y comprobar ejecutables y ZIP
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG) {
+            python tools/build_windows.py --tag $env:RELEASE_TAG
+          } else {
+            python tools/build_windows.py
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-windows-x64
+          path: dist/packages/windows-x64/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Guardar informes Windows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-windows-x64
+          path: |
+            build/verification/windows-x64/*
+          retention-days: 14
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            python-arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            python-arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python-arch }}
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Instalar dependencias
+        run: python -c "import subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements-build.txt', '-e', '.'], check=True); subprocess.run([sys.executable, '-m', 'pip', 'check'], check=True)"
+      - name: Comprobar GUI y bibliotecas obligatorias
+        run: python -c "import tkinter as tk; import reportlab, openpyxl; root=tk.Tk(); root.withdraw(); root.destroy()"
+      - name: Ejecutar todas las pruebas
+        run: python -m unittest discover -s tests -v
+      - name: Construir .app y verificar arranque, firma ad hoc y ZIP
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            python tools/build_macos.py --architecture "$BUILD_ARCH" --tag "$RELEASE_TAG"
+          else
+            python tools/build_macos.py --architecture "$BUILD_ARCH"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-macos-${{ matrix.arch }}
+          path: dist/packages/macos-${{ matrix.arch }}/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Guardar informes macOS
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-macos-${{ matrix.arch }}
+          path: |
+            build/verification/macos-${{ matrix.arch }}/*
+            build/macos-${{ matrix.arch }}/**/warn-*.txt
+          retention-days: 14
+
+  assemble:
+    name: Reunir y verificar las tres aplicaciones
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: build/packages
+      - run: python tools/assemble_release.py --source build/packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publicar después de verificar todos los adjuntos
+    needs: assemble
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-release
+          path: release-assets
+      - name: Crear borrador, adjuntar, descargar, verificar y publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python tools/publish_release.py --tag "$RELEASE_TAG" --repo "$GH_REPO" --assets release-assets

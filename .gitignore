@@ -15,6 +15,7 @@ build/
 Thumbs.db
 .DS_Store
 
-# Archivos locales de automatización y versiones anteriores.
-/.github/workflows/
+# Entorno de empaquetado y versiones anteriores.
+.venv-build/
+.venv-build-macos/
 /legacy/

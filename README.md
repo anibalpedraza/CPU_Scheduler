@@ -24,6 +24,12 @@ Desarrollada por Aníbal Pedraza para la asignatura Informática de primer curso
 - Exportación CSV por tabla, PDF de una página y Excel con una única pestaña.
 - Cortar/copiar procesos, copiar resultados y pegar procesos desde Excel o texto tabulado.
 
+## Distribución Windows y macOS 2.0.0
+
+La release ofrece un ejecutable único de Windows x64 y ZIP con la aplicación .app para Apple Silicon e Intel. Incluyen Python, Tcl/Tk y las bibliotecas de exportación. Las guías permanecen en el repositorio; las licencias se consultan en Ayuda → Acerca de. GitHub Actions espera a las tres plataformas, verifica que tengan el mismo código y publica cinco adjuntos sólo al subir la etiqueta de versión. Las pruebas manuales y los pushes a main no publican una release.
+
+Consulte [el procedimiento de empaquetado y publicación](docs/EMPAQUETADO.md) y [el resultado de la revisión Windows/macOS](docs/RESULTADO_VALIDACION_WINDOWS_2026-10-08.md).
+
 ## Ejecución rápida
 
 Requiere Python 3.10 o posterior con Tkinter:
