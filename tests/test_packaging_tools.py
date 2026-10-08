@@ -12,7 +12,7 @@ from unittest.mock import patch
 from planificador_procesos.metadata import VERSION
 from tools.assemble_release import PLATFORMS, assemble, package_names
 from tools.build_macos import clean_finder_metadata, native_architecture
-from tools.packaging_common import build_context, check_version, source_fingerprint, write_build_metadata
+from tools.packaging_common import build_context, check_version, source_fingerprint, write_build_metadata, prepare_license_files
 
 SOURCE_SHA256 = source_fingerprint()
 from tools.publish_release import publish, verify_assets
@@ -139,6 +139,14 @@ class PackagingToolsTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "fuentes de publicación"):
                     publish(f"v{VERSION}", "example/repo", root)
                 command.assert_not_called()
+
+    def test_license_resources_include_project_and_third_party_notices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = prepare_license_files(Path(directory))
+            self.assertIn("MIT License", (target / "LICENSE.txt").read_text(encoding="utf-8"))
+            notices = (target / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8").lower()
+            for name in ("pyinstaller", "reportlab", "openpyxl", "pillow"):
+                self.assertIn(name, notices)
 
     def test_tag_must_match_application_version(self):
         self.assertEqual(check_version(f"v{VERSION}"), VERSION)

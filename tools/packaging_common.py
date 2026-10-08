@@ -99,8 +99,8 @@ def third_party_notices() -> str:
     probe.withdraw()
     try:
         for library in (probe.tk.call("info", "library"), probe.tk.call("set", "tk_library")):
-            candidates.append(Path(library) / "license.terms")
-            candidates.append(Path(library).parent / "license.terms")
+            candidates.append(Path(str(library)) / "license.terms")
+            candidates.append(Path(str(library)).parent / "license.terms")
     finally:
         probe.destroy()
     for source in dict.fromkeys(candidates):
